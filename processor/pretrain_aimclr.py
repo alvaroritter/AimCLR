@@ -32,14 +32,17 @@ class AimCLR_Processor(PT_Processor):
         self.adjust_lr()
         loader = self.data_loader['train']
         loss_value = []
+        self.model.embedding_callback.clean_storage()
 
-        for [data1, data2, data3], label in loader:
+        for [data1, data2, data3], label, skeletons in loader:
             self.global_step += 1
             # get data
             data1 = data1.float().to(self.dev, non_blocking=True)
             data2 = data2.float().to(self.dev, non_blocking=True)
             data3 = data3.float().to(self.dev, non_blocking=True)
             label = label.long().to(self.dev, non_blocking=True)
+            q_skeleton = skeletons['q'][0]
+            k_skeleton = skeletons['k'][0] # Skeletons should be the same for the entire stream
 
             if self.arg.stream == 'joint':
                 pass
@@ -59,14 +62,38 @@ class AimCLR_Processor(PT_Processor):
                 Bone = [(1, 2), (2, 21), (3, 21), (4, 3), (5, 21), (6, 5), (7, 6), (8, 7), (9, 21),
                         (10, 9), (11, 10), (12, 11), (13, 1), (14, 13), (15, 14), (16, 15), (17, 1),
                         (18, 17), (19, 18), (20, 19), (21, 21), (22, 23), (23, 8), (24, 25), (25, 12)]
+                Bone = {'ntu-rgb+d': [(1, 2), (2, 21), (3, 21), (4, 3), (5, 21), (6, 5), (7, 6), (8, 7), (9, 21),
+                            (10, 9), (11, 10), (12, 11), (13, 1), (14, 13), (15, 14), (16, 15), (17, 1),
+                            (18, 17), (19, 18), (20, 19), (21, 21), (22, 23), (23, 8), (24, 25), (25, 12)],
+                     'smpl_24': [(1, 4), (4, 7), (7, 10), (13, 10), (16, 13),
+                            (2, 1), (5, 2), (8, 5), (11, 8), (3, 1), (6, 3), (9, 6), (12, 9),
+                            (14, 10), (17, 14), (19, 17), (21, 19), (23, 21),
+                            (15, 10), (18, 15), (20, 18), (22, 20), (24, 22)],
+                     'smplx_42': [(7, 10), (4, 7), (1, 4),
+                            (2, 1), (5, 2), (8, 5), (35, 8), (11, 8), (33, 11), (34, 11), # Left leg
+                            (3, 1), (6, 3), (9, 6), (38, 9), (12, 9), (36, 12), (37, 12), # Right Leg
+                            (14, 10), (17, 14), (19, 17), (21, 19), (26, 21), (39, 21), (40, 21), # Left Arm
+                            (15, 10), (18, 15), (20, 18), (22, 20), (27, 22), (41, 22), (42, 22), # Right Arm
+                            (13, 10), (23, 13), (16, 23), (28, 16), (30, 28), (32, 30),
+                            (29, 28), (31, 29)],
+                     'berkeley_mhad_43':[(1, 2), (1, 3), (4, 5), (4, 36), (5, 6), (5, 7), 
+                            (7, 28), (8, 9), (8, 29), (9, 10), (9, 11), (11, 37), 
+                            (12, 13), (12, 20), (13, 14), (14, 15), (15, 16), 
+                            (16, 17), (16, 18), (16, 19), (20, 21), (21, 22), 
+                            (22, 23), (23, 24), (24, 25), (24, 26), (24, 27), 
+                            (28, 30), (28, 36), (29, 30), (29, 31), (31, 32), 
+                            (32, 33), (33, 34), (34, 35), (36, 38), (37, 38), 
+                            (37, 39), (39, 40), (40, 41), (41, 42), (42, 43)]}
 
                 bone1 = torch.zeros_like(data1)
                 bone2 = torch.zeros_like(data2)
                 bone3 = torch.zeros_like(data3)
 
-                for v1, v2 in Bone:
+                for v1, v2 in Bone[q_skeleton]:
+                    #  Data1 and data2 go to the query encoders --> Belong to the same skeleton
                     bone1[:, :, :, v1 - 1, :] = data1[:, :, :, v1 - 1, :] - data1[:, :, :, v2 - 1, :]
                     bone2[:, :, :, v1 - 1, :] = data2[:, :, :, v1 - 1, :] - data2[:, :, :, v2 - 1, :]
+                for v1, v2 in Bone[k_skeleton]:
                     bone3[:, :, :, v1 - 1, :] = data3[:, :, :, v1 - 1, :] - data3[:, :, :, v2 - 1, :]
 
                 data1 = bone1
@@ -77,7 +104,7 @@ class AimCLR_Processor(PT_Processor):
 
             # forward
             if epoch <= self.arg.mining_epoch:
-                output1, target1, output2, output3, target2 = self.model(data1, data2, data3)
+                output1, target1, output2, output3, target2 = self.model(data1, data2, data3, q_skeleton=q_skeleton, k_skeleton=k_skeleton)
                 if hasattr(self.model, 'module'):
                     self.model.module.update_ptr(output1.size(0))
                 else:
@@ -87,7 +114,7 @@ class AimCLR_Processor(PT_Processor):
                 loss3 = -torch.mean(torch.sum(torch.log(output3) * target2, dim=1))  # DDM loss
                 loss = loss1 + (loss2 + loss3) / 2.
             else:
-                output1, mask, output2, output3, target2 = self.model(data1, data2, data3, nnm=True, topk=self.arg.topk)
+                output1, mask, output2, output3, target2 = self.model(data1, data2, data3, nnm=True, topk=self.arg.topk, q_skeleton=q_skeleton, k_skeleton=k_skeleton)
                 if hasattr(self.model, 'module'):
                     self.model.module.update_ptr(output1.size(0))
                 else:
@@ -97,6 +124,9 @@ class AimCLR_Processor(PT_Processor):
                 loss2 = -torch.mean(torch.sum(torch.log(output2) * target2, dim=1))  # DDM loss
                 loss3 = -torch.mean(torch.sum(torch.log(output3) * target2, dim=1))  # DDM loss
                 loss = loss1 + (loss2 + loss3) / 2.
+
+            # Embedding Callback
+            self.model.embedding_callback.store_labels(label)
 
             # backward
             self.optimizer.zero_grad()
@@ -113,7 +143,14 @@ class AimCLR_Processor(PT_Processor):
 
         self.epoch_info['train_mean_loss'] = np.mean(loss_value)
         self.train_writer.add_scalar('loss', self.epoch_info['train_mean_loss'], epoch)
+        self.wandb.log({'loss':self.epoch_info['train_mean_loss'], 'epoch': epoch})
+
         self.show_epoch_info()
+
+        if epoch % self.model.embedding_callback.epoch_plot_interval == 0:
+            self.model.embedding_callback.plot_tsne(epoch, self.wandb, stage="train", view='Joint')
+            self.model.embedding_callback.plot_tsne(epoch, self.wandb, stage="train", view='Motion')
+
 
     @staticmethod
     def get_parser(add_help=False):

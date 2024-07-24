@@ -20,6 +20,8 @@ from torchlight import import_class
 
 from .io import IO
 from tensorboardX import SummaryWriter
+import wandb
+import torch.functional as F
 
 
 def init_seed(seed=1):
@@ -31,6 +33,42 @@ def init_seed(seed=1):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+def worker_init_fn(worker_id):
+    base_seed = torch.initial_seed() 
+    worker_seed = (base_seed + worker_id) % 2**32
+    
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+    torch.manual_seed(worker_seed)
+
+def worker_init_fn_with_skeleton(worker_id):
+    worker_init_fn(worker_id)
+    worker_info = torch.utils.data.get_worker_info()
+    dataset = worker_info.dataset
+
+    # Randomly assign ntu-rgb+d to either query or key
+    if random.choice([True, False]):
+        query_skeleton = 'ntu-rgb+d'
+        key_skeleton = random.choice(dataset.skeletons)
+    else:
+        key_skeleton = 'ntu-rgb+d'
+        query_skeleton = random.choice(dataset.skeletons)
+
+    # Set the batch skeletons for the current worker
+    dataset.set_batch_skeletons(query_skeleton, key_skeleton)
+
+def worker_init_fn_with_skeleton_random(worker_id):
+    worker_init_fn(worker_id)
+    worker_info = torch.utils.data.get_worker_info()
+    dataset = worker_info.dataset
+
+    # Randomly select skeletons for query and key
+    query_skeleton = random.choice(dataset.skeletons)
+    key_skeleton = random.choice(dataset.skeletons)
+
+    # Set the batch skeletons for the current worker
+    dataset.set_batch_skeletons(query_skeleton, key_skeleton)
+
 
 class Processor(IO):
     """
@@ -38,6 +76,7 @@ class Processor(IO):
     """
 
     def __init__(self, argv=None):
+        self.wandb = wandb.init(project= 'SkeletonCLR')
 
         self.load_arg(argv)
         self.init_environment()
@@ -87,16 +126,30 @@ class Processor(IO):
         self.data_loader = dict()
 
         if self.arg.train_feeder_args:
-            train_feeder = import_class(self.arg.train_feeder)
-            self.data_loader['train'] = torch.utils.data.DataLoader(
-                dataset=train_feeder(**self.arg.train_feeder_args),
-                batch_size=self.arg.batch_size,
-                shuffle=True,
-                pin_memory=True,    # set True when memory is abundant
-                num_workers=self.arg.num_worker * torchlight.ngpu(
-                    self.arg.device),
-                drop_last=True,
-                worker_init_fn=init_seed)
+            if self.arg.train_feeder == 'feeder.ntu_feeder.Feeder_mixed_triple': # Needed for skeleton worker init
+                train_feeder = import_class(self.arg.train_feeder)
+
+                self.data_loader['train'] = torch.utils.data.DataLoader(
+                    dataset=train_feeder(**self.arg.train_feeder_args),
+                    batch_size=self.arg.batch_size,
+                    shuffle=True,
+                    pin_memory=True,    # set True when memory is abundant
+                    num_workers=self.arg.num_worker * torchlight.ngpu(
+                        self.arg.device),
+                    drop_last=True,
+                    worker_init_fn=worker_init_fn_with_skeleton_random if self.arg.train_feeder_args.get('full_random_skeleton', False) else worker_init_fn_with_skeleton)
+            
+            else: 
+                train_feeder = import_class(self.arg.train_feeder)
+                self.data_loader['train'] = torch.utils.data.DataLoader(
+                    dataset=train_feeder(**self.arg.train_feeder_args),
+                    batch_size=self.arg.batch_size,
+                    shuffle=True,
+                    pin_memory=True,    # set True when memory is abundant
+                    num_workers=self.arg.num_worker * torchlight.ngpu(
+                        self.arg.device),
+                    drop_last=True,
+                    worker_init_fn=worker_init_fn)
                 
         if self.arg.test_feeder_args:
             test_feeder = import_class(self.arg.test_feeder)

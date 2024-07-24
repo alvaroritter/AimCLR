@@ -8,7 +8,10 @@ from math import sin, cos
 
 
 transform_order = {
-    'ntu': [0, 1, 2, 3, 8, 9, 10, 11, 4, 5, 6, 7, 16, 17, 18, 19, 12, 13, 14, 15, 20, 23, 24, 21, 22]
+    'ntu': [0, 1, 2, 3, 8, 9, 10, 11, 4, 5, 6, 7, 16, 17, 18, 19, 12, 13, 14, 15, 20, 23, 24, 21, 22],
+    'smpl_24':[0, 2, 1, 3, 5, 4, 6, 8, 7, 9, 11, 10, 12, 14, 13, 15, 17, 16, 19, 18, 21, 20, 22, 24],
+    'smplx_42':[0, 2, 1, 3, 5, 4, 6, 8, 7, 9, 11, 10, 12, 14, 13, 15, 17, 16, 19, 18, 21, 20, 22, 24, 23,
+               26, 25, 27, 29, 28, 31, 30, 35, 36, 37, 32, 33, 34, 40, 41, 38, 39]
 }
 
 
@@ -41,7 +44,13 @@ def temperal_crop(data_numpy, temperal_padding_ratio=6):
 def random_spatial_flip(seq, p=0.5):
     if random.random() < p:
         # Do the left-right transform C,T,V,M
-        index = transform_order['ntu']
+        _, _, V, _ = seq.shape
+        if (V == 25):
+            index = transform_order['ntu']
+        elif (V == 24):
+            index = transform_order['smpl_24']
+        elif (V == 42):
+            index = transform_order['smplx_42']
         trans_seq = seq[:, :, index, :]
         return trans_seq
     else:

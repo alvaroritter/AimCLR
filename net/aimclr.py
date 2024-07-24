@@ -3,9 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchlight import import_class
 
+from embeddings.embedding_plotter import EmbeddingPlotCallback
+
 
 class AimCLR(nn.Module):
-    def __init__(self, base_encoder=None, pretrain=True, feature_dim=128, queue_size=32768,
+    def __init__(self, skeletons=None, base_encoder=None, pretrain=True, plot_interval=10, embeddings_per_batch=50, feature_dim=128, queue_size=32768,
                  momentum=0.999, Temperature=0.07, mlp=True, in_channels=3, hidden_channels=64,
                  hidden_dim=256, num_class=60, dropout=0.5,
                  graph_args={'layout': 'ntu-rgb+d', 'strategy': 'spatial'},
@@ -17,10 +19,13 @@ class AimCLR(nn.Module):
         """
         super().__init__()
         base_encoder = import_class(base_encoder)
+
+        self.embedding_callback = EmbeddingPlotCallback(epoch_plot_interval=plot_interval, embeddings_per_batch=embeddings_per_batch) # TODO: Add this to CrosSCLR and other models
+
         self.pretrain = pretrain
 
         if not self.pretrain:
-            self.encoder_q = base_encoder(in_channels=in_channels, hidden_channels=hidden_channels,
+            self.encoder_q = base_encoder(skeletons=skeletons, in_channels=in_channels, hidden_channels=hidden_channels,
                                           hidden_dim=hidden_dim, num_class=num_class,
                                           dropout=dropout, graph_args=graph_args,
                                           edge_importance_weighting=edge_importance_weighting,
@@ -30,12 +35,12 @@ class AimCLR(nn.Module):
             self.m = momentum
             self.T = Temperature
 
-            self.encoder_q = base_encoder(in_channels=in_channels, hidden_channels=hidden_channels,
+            self.encoder_q = base_encoder(skeletons=skeletons, in_channels=in_channels, hidden_channels=hidden_channels,
                                           hidden_dim=hidden_dim, num_class=feature_dim,
                                           dropout=dropout, graph_args=graph_args,
                                           edge_importance_weighting=edge_importance_weighting,
                                           **kwargs)
-            self.encoder_k = base_encoder(in_channels=in_channels, hidden_channels=hidden_channels,
+            self.encoder_k = base_encoder(skeletons=skeletons, in_channels=in_channels, hidden_channels=hidden_channels,
                                           hidden_dim=hidden_dim, num_class=feature_dim,
                                           dropout=dropout, graph_args=graph_args,
                                           edge_importance_weighting=edge_importance_weighting,
@@ -79,7 +84,7 @@ class AimCLR(nn.Module):
         assert self.K % batch_size == 0  # for simplicity
         self.queue_ptr[0] = (self.queue_ptr[0] + batch_size) % self.K
 
-    def forward(self, im_q_extreme, im_q, im_k=None, nnm=False, topk=1):
+    def forward(self, im_q_extreme, im_q, im_k=None, nnm=False, topk=1, q_skeleton='ntu-rgb+d', k_skeleton='ntu-rgb+d'):
         """
         Input:
             im_q: a batch of query sequences
@@ -88,15 +93,15 @@ class AimCLR(nn.Module):
         """
 
         if nnm:
-            return self.nearest_neighbors_mining(im_q, im_k, im_q_extreme, topk)
+            return self.nearest_neighbors_mining(im_q, im_k, im_q_extreme, topk, q_skeleton, k_skeleton)
 
         if not self.pretrain:
             return self.encoder_q(im_q)
 
         # Obtain the normally augmented query feature
-        q = self.encoder_q(im_q)  # NxC
+        q = self.encoder_q(im_q, q_skeleton)  # NxC
         # Obtain the extremely augmented query feature and dropped extremely augmented query feature
-        q_extreme, q_extreme_drop = self.encoder_q(im_q_extreme, drop=True)  # NxC
+        q_extreme, q_extreme_drop = self.encoder_q(im_q_extreme, q_skeleton, drop=True)  # NxC
 
         # Normalize the feature
         q = F.normalize(q, dim=1)
@@ -107,8 +112,10 @@ class AimCLR(nn.Module):
         with torch.no_grad():  # no gradient to keys
             self._momentum_update_key_encoder()  # update the key encoder
 
-            k = self.encoder_k(im_k)  # keys: NxC
+            k = self.encoder_k(im_k, k_skeleton)  # keys: NxC
             k = F.normalize(k, dim=1)
+
+        self.embedding_callback.store_embeddings({'query': q, 'key': k})
 
         # Compute logits of normally augmented query using Einstein sum
         # positive logits: Nx1
@@ -154,12 +161,12 @@ class AimCLR(nn.Module):
 
         return logits, labels, logits_e, logits_ed, labels_ddm
 
-    def nearest_neighbors_mining(self, im_q, im_k, im_q_extreme, topk=1):
+    def nearest_neighbors_mining(self, im_q, im_k, im_q_extreme, topk=1, q_skeleton='ntu-rgb+d', k_skeleton='ntu-rgb+d'):
 
         # Obtain the normally augmented query feature
-        q = self.encoder_q(im_q)  # NxC
+        q = self.encoder_q(im_q, q_skeleton)  # NxC
         # Obtain the extremely augmented query feature and dropped extremely augmented query feature
-        q_extreme, q_extreme_drop = self.encoder_q(im_q_extreme, drop=True)  # NxC
+        q_extreme, q_extreme_drop = self.encoder_q(im_q_extreme, q_skeleton, drop=True)  # NxC
 
         # Normalize the feature
         q = F.normalize(q, dim=1)
@@ -170,7 +177,7 @@ class AimCLR(nn.Module):
         with torch.no_grad():  # no gradient to keys
             self._momentum_update_key_encoder()  # update the key encoder
 
-            k = self.encoder_k(im_k)  # keys: NxC
+            k = self.encoder_k(im_k, k_skeleton)  # keys: NxC
             k = F.normalize(k, dim=1)
 
         l_pos = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)

@@ -42,7 +42,8 @@ class Graph():
         if layout == 'openpose':
             self.num_node = 18
             self_link = [(i, i) for i in range(self.num_node)]
-            neighbor_link = [(4, 3), (3, 2), (7, 6), (6, 5), (13, 12), (12, 11),
+            neighbor_link = [(4, 3), (3, 2), (7, 6), (6, 5), (13, 12), (12,
+                                                                        11),
                              (10, 9), (9, 8), (11, 5), (8, 2), (5, 1), (2, 1),
                              (0, 1), (15, 0), (14, 0), (17, 15), (16, 14)]
             self.edge = self_link + neighbor_link
@@ -58,18 +59,58 @@ class Graph():
             neighbor_link = [(i - 1, j - 1) for (i, j) in neighbor_1base]
             self.edge = self_link + neighbor_link
             self.center = 21 - 1
-        elif layout == 'nw-ucla':
-            self.num_node = 20
+        elif layout == 'smpl_24':
+            self.num_node = 24
             self_link = [(i, i) for i in range(self.num_node)]
-            neighbor_1base = [(1, 2), (2, 3), (4, 3), (5, 3), (6, 5), (7, 6),
-                              (8, 7), (9, 3), (10, 9), (11, 10), (12, 11), (13, 1),
-                              (14, 13), (15, 14), (16, 15), (17, 1), (18, 17), (19, 18),
-                              (20, 19)]
+            neighbor_1base = [(1, 4), (4, 7), (7, 10), (13, 10), (16, 13),
+                            (2, 1), (5, 2), (8, 5), (11, 8), (3, 1), (6, 3), (9, 6), (12, 9),
+                            (14, 10), (17, 14), (19, 17), (21, 19), (23, 21),
+                            (15, 10), (18, 15), (20, 18), (22, 20), (24, 22)]
             neighbor_link = [(i - 1, j - 1) for (i, j) in neighbor_1base]
             self.edge = self_link + neighbor_link
-            self.center = 3 - 1
+            self.center = 10 - 1 # Center is Spine 3 which connects to the clavicules
+        elif layout == 'smplx_42':
+            self.num_node = 42
+            self_link = [(i, i) for i in range(self.num_node)]
+            neighbor_1base = [(7, 10), (4, 7), (1, 4),
+                            (2, 1), (5, 2), (8, 5), (35, 8), (11, 8), (33, 11), (34, 11), # Left leg
+                            (3, 1), (6, 3), (9, 6), (38, 9), (12, 9), (36, 12), (37, 12), # Right Leg
+                            (14, 10), (17, 14), (19, 17), (21, 19), (26, 21), (39, 21), (40, 21), # Left Arm
+                            (15, 10), (18, 15), (20, 18), (22, 20), (27, 22), (41, 22), (42, 22), # Right Arm
+                            (13, 10), (23, 13), (16, 23), (28, 16), (30, 28), (32, 30),
+                            (29, 28), (31, 29)] 
+            neighbor_link = [(i - 1, j - 1) for (i, j) in neighbor_1base]
+            self.edge = self_link + neighbor_link
+            self.center = 10 - 1 # Center is Thorax connects to the clavicules
+        elif layout == 'berkeley_mhad_43':
+            self.num_node = 43
+            self_link = [(i, i) for i in range(self.num_node)]
+            neighbor_1base = [(1, 2), (1, 3), (4, 5), (4, 36), (5, 6), (5, 7), 
+                            (7, 28), (8, 9), (8, 29), (9, 10), (9, 11), (11, 37), 
+                            (12, 13), (12, 20), (13, 14), (14, 15), (15, 16), 
+                            (16, 17), (16, 18), (16, 19), (20, 21), (21, 22), 
+                            (22, 23), (23, 24), (24, 25), (24, 26), (24, 27), 
+                            (28, 30), (28, 36), (29, 30), (29, 31), (31, 32), 
+                            (32, 33), (33, 34), (34, 35), (36, 38), (37, 38), 
+                            (37, 39), (39, 40), (40, 41), (41, 42), (42, 43)]
+            neighbor_link = [(i - 1, j - 1) for (i, j) in neighbor_1base]
+            self.edge = self_link + neighbor_link
+            self.center = 9 - 1 # Center is Belly
+        elif layout == 'ntu_edge':
+            self.num_node = 24
+            self_link = [(i, i) for i in range(self.num_node)]
+            neighbor_1base = [(1, 2), (3, 2), (4, 3), (5, 2), (6, 5), (7, 6),
+                              (8, 7), (9, 2), (10, 9), (11, 10), (12, 11),
+                              (13, 1), (14, 13), (15, 14), (16, 15), (17, 1),
+                              (18, 17), (19, 18), (20, 19), (21, 22), (22, 8),
+                              (23, 24), (24, 12)]
+            neighbor_link = [(i - 1, j - 1) for (i, j) in neighbor_1base]
+            self.edge = self_link + neighbor_link
+            self.center = 2
+        # elif layout=='customer settings'
+        #     pass
         else:
-            raise ValueError("Do Not Exist This Layout.")
+            raise ValueError("This Layout does not exist.")
 
     def get_adjacency(self, strategy):
         valid_hop = range(0, self.max_hop + 1, self.dilation)
