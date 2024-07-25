@@ -17,6 +17,7 @@ train_feeder_args:
 # model
 model: net.aimclr.AimCLR
 model_args:
+  plot_interval: 10
   skeletons:
     - ntu-rgb+d
     - smplx_42

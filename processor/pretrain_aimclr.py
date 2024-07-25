@@ -149,8 +149,6 @@ class AimCLR_Processor(PT_Processor):
 
         if epoch % self.model.embedding_callback.epoch_plot_interval == 0:
             self.model.embedding_callback.plot_tsne(epoch, self.wandb, stage="train", view='Joint')
-            self.model.embedding_callback.plot_tsne(epoch, self.wandb, stage="train", view='Motion')
-
 
     @staticmethod
     def get_parser(add_help=False):

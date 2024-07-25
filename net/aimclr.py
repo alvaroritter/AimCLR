@@ -180,6 +180,8 @@ class AimCLR(nn.Module):
             k = self.encoder_k(im_k, k_skeleton)  # keys: NxC
             k = F.normalize(k, dim=1)
 
+        self.embedding_callback.store_embeddings({'query': q, 'key': k})
+
         l_pos = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
         l_neg = torch.einsum('nc,ck->nk', [q, self.queue.clone().detach()])
 

@@ -163,23 +163,24 @@ class Feeder_mixed_triple(torch.utils.data.Dataset):
                 self.data[skeleton] = np.load(self.data_path[skeleton])
 
     def __len__(self):
-        return len(self.label)
+        # Increase dataset size by number of skeletons
+        return len(self.label)*len(self.skeletons)
 
     def __getitem__(self, index):
         # get data
-        data_q = np.array(self.data[self.batch_skeletons['q']][index])*self.factor
-        data_k = np.array(self.data[self.batch_skeletons['k']][index])*self.factor
+        data_q = np.array(self.data[self.batch_skeletons['q']][index%len(self.label)])*self.factor
+        data_k = np.array(self.data[self.batch_skeletons['k']][index%len(self.label)])*self.factor
 
         _, _, V_q, _ = data_q.shape
         _, _, V_k, _ = data_k.shape
 
         if not self.factor_ntu:
             if self.batch_skeletons['q'] == 'ntu-rgb+d':
-                data_q = np.array(self.data[self.batch_skeletons['q']][index])
+                data_q = np.array(self.data[self.batch_skeletons['q']][index%len(self.label)])
             if self.batch_skeletons['k'] == 'ntu-rgb+d':
-                data_k = np.array(self.data[self.batch_skeletons['k']][index])
+                data_k = np.array(self.data[self.batch_skeletons['k']][index%len(self.label)])
 
-        label = self.label[index]
+        label = self.label[index%len(self.label)]
         #print(f"Before augmentation: dataq shape: {data_q.shape}, datak shape: {data_k.shape}")
 
         # processing
